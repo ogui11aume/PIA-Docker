@@ -1,48 +1,34 @@
-FROM nginx:1.13
-ENV DEBIAN_FRONTEND noninteractive
+FROM node:22.20 as builder
+# FROM node:18.18.2-alpine3.18@sha256:1c19c701b3f22fa88681630d3acac968b1b0b944b51b57e17041d37ddccab579 as builder
 
-RUN apt-get update \
- && apt-get install --no-install-recommends -y \
-    git \
-    ca-certificates \
-    wget \
-    xz-utils \
-    sudo \
-    curl \
-    gnupg \
-    apt-transport-https \
- && apt-get clean
+USER root
 
-ENV NODEJS_VERSION 8.11.2
-RUN wget --no-verbose https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-x64.tar.xz -O /tmp/node-v${NODEJS_VERSION}-linux-x64.tar.xz \
- && tar -xf /tmp/node-v${NODEJS_VERSION}-linux-x64.tar.xz -C /opt \
- && ln -s /opt/node-v${NODEJS_VERSION}-linux-x64/bin/node /usr/bin/node \
- && ln -s /opt/node-v${NODEJS_VERSION}-linux-x64/bin/npm /usr/bin/npm \
- && rm /tmp/node-v${NODEJS_VERSION}-linux-x64.tar.xz
+ARG PIA_VERSION=v4.1.0
+ARG PIA_BRANCH=sso
 
-# Add Yarn repository
-RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
-RUN echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
-# Update
-RUN apt-get update -y
-# Install Yarn
-RUN apt-get install yarn -y
+ARG ANGULAR_CLI_VERSION=20.3
+
+RUN npm install -g @angular/cli@$ANGULAR_CLI_VERSION
+
+RUN wget https://github.com/LINCnil/pia/archive/$PIA_BRANCH.zip \
+ && unzip $PIA_BRANCH.zip \
+ && rm $PIA_BRANCH.zip
+RUN mkdir pia-front
+COPY pia-$PIA_BRANCH pia-front
+WORKDIR pia-front
+
+RUN corepack enable
+RUN corepack prepare yarn@4.10.3 --activate
+
+RUN yarn install
+RUN yarn prod
+RUN mkdir -p /dist
+RUN mv dist/pia-angular /dist/pia
+
+FROM nginx:1.29 as runtime
+
+RUN mkdir -p /var/www && chown www-data -R /var/www/
 
 COPY ./conf/cnil_pia.conf /etc/nginx/conf.d/default.conf
 
-RUN mkdir -p /var/www && chown www-data. /var/www/
-
-USER www-data
-
-ENV PIA_VERSION 1.6.4
-RUN git clone --branch $PIA_VERSION https://github.com/LINCnil/pia.git --depth 1 /var/www/pia
-
-WORKDIR /var/www/pia
-
-# Fix for release 1.6.0 : https://github.com/LINCnil/pia/issues/127#issuecomment-369620227
-RUN yarn install \
- && cp src/environments/environment.prod.ts.example src/environments/environment.prod.ts \
- && sed -i -e "s/version: ''/version: '$PIA_VERSION'/g" src/environments/environment.prod.ts \
- && /var/www/pia/node_modules/@angular/cli/bin/ng build --prod --build-optimizer --sourcemaps
-
-USER root
+COPY --from=builder /dist/pia/browser /var/www/

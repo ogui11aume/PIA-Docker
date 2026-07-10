@@ -3,6 +3,7 @@ services:
   cnil-pia-back:
     container_name: LINCnil-pia-back
     build: docker/cnil-pia-back
+    image: ${COMPOSE_PROJECT_NAME}-cnil-pia-back:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       - DATABASE_HOST=database
@@ -16,12 +17,13 @@ services:
   cnil-pia-front:
     container_name: LINCnil-pia-front
     build: docker/cnil-pia-front
+    image: ${COMPOSE_PROJECT_NAME}-cnil-pia-front:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "8080:80"
   database:
     container_name: LINCnil-pia-db
-    image: postgres:10.3
+    image: postgres:13
     restart: unless-stopped
     environment:
       - POSTGRES_PASSWORD=rootpostgres
